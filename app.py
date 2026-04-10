@@ -2,122 +2,84 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# 1. PAGE SETUP
 st.set_page_config(page_title="DASA 2026 Master Predictor", layout="wide")
 
-# 2. FAIL-SAFE DATA LOADER
 @st.cache_data
 def load_college_data():
     try:
-        # Load the CSV
         df = pd.read_csv("dasa_data.csv")
-        # Clean headers (removes hidden spaces/newlines)
         df.columns = df.columns.str.strip() 
         
-        # Mapping your exact headers to simplified names for the code
-        # Your headers: Institute, Academic Program Name, Quota, Opening Rank, Closing Rank
+        # Exact matching for your headers
         rename_dict = {
             'Institute': 'Institute',
             'Academic Program Name': 'Branch',
             'Quota': 'Category',
-            'Opening Rank': 'OR',
             'Closing Rank': 'Closing Rank'
         }
         
-        # Ensure the columns actually exist before renaming
-        for original in rename_dict.keys():
-            if original not in df.columns:
-                return None, f"❌ Header mismatch! Missing: '{original}'. Found: {list(df.columns)}"
+        # Check if they exist
+        for old, new in rename_dict.items():
+            if old not in df.columns:
+                return None, f"Missing column: {old}"
         
         df = df.rename(columns=rename_dict)
-        
-        # CLEAN DATA: Convert Closing Rank to numeric (removes commas if any)
+        # Fix Rank format (remove commas and convert to number)
         df['Closing Rank'] = pd.to_numeric(df['Closing Rank'].astype(str).str.replace(',', ''), errors='coerce')
-        df = df.dropna(subset=['Closing Rank']) # Remove rows with broken rank data
-        
-        return df, None
+        return df.dropna(subset=['Closing Rank']), None
     except Exception as e:
         return None, str(e)
 
-df, error_msg = load_college_data()
+df, err = load_college_data()
 
-# 3. PREMIUM DARK UI
-st.markdown("""
-    <style>
-    .stApp { background-color: #0e1117; color: white; }
-    .college-card { 
-        background-color: #1c212d; padding: 20px; border-radius: 12px; 
-        border-left: 6px solid #f1c40f; margin-bottom: 15px;
-    }
-    .safe-tag { color: #2ecc71; font-weight: bold; font-size: 0.8em; border: 1px solid #2ecc71; padding: 2px 8px; border-radius: 5px; }
-    .risky-tag { color: #f1c40f; font-weight: bold; font-size: 0.8em; border: 1px solid #f1c40f; padding: 2px 8px; border-radius: 5px; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# 4. APP LOGIC
 st.title("🏛️ DASA 2026 Master Predictor")
 
 if df is not None:
+    # --- DEBUG SECTION (You can delete this after it works) ---
+    with st.expander("🛠️ Debug: See your file data"):
+        st.write("Unique Categories in your file:", df['Category'].unique().tolist())
+        st.write("First 5 rows of data:", df.head())
+    # ---------------------------------------------------------
+
     st.sidebar.header("🎯 Target Rank")
-    user_rank = st.sidebar.number_input("Enter JEE Main CRL Rank", min_value=1, value=50000)
+    user_rank = st.sidebar.number_input("JEE Main CRL Rank", value=50000)
     
-    # Matching the Quota names from your file
-    category = st.sidebar.selectbox("Category", ["Non-CIWG", "CIWG"])
+    # Check if we should use CIWG or something else
+    available_cats = df['Category'].unique().tolist()
+    category = st.sidebar.selectbox("Category", available_cats)
     
-    # SEARCH FEATURE (Makes it better than DASA Compass)
-    search = st.sidebar.text_input("🔍 Search College or Branch")
-    
-    st.sidebar.divider()
-    buffer = st.sidebar.slider("2026 Volatility Buffer (%)", 0, 20, 5)
+    search = st.sidebar.text_input("🔍 Search College")
+    buffer = st.sidebar.slider("2026 Buffer (%)", 0, 20, 5)
     effective_rank = user_rank * (1 + buffer/100)
 
-    # OUTPUT
-    col1, col2 = st.columns([1, 2.5])
+    results = df[df['Category'] == category].copy()
     
-    with col1:
-        st.subheader("Your Analysis")
-        st.metric("Effective Rank", f"{int(effective_rank):,}")
-        st.caption(f"Accounting for a {buffer}% competition spike in 2026.")
-        st.divider()
-        st.info("💡 Pro Tip: Borderline colleges are great choices for 'Internal Sliding'.")
+    if search:
+        results = results[results['Institute'].str.contains(search, case=False) | 
+                         results['Branch'].str.contains(search, case=False)]
 
-    with col2:
-        st.subheader(f"Matches for {category}")
-        
-        # Filter by Category and Search
-        results = df[df['Category'] == category].copy()
-        if search:
-            results = results[results['Institute'].str.contains(search, case=False) | 
-                             results['Branch'].str.contains(search, case=False)]
-        
-        # Sort so best colleges (lower closing rank) show first
-        results = results.sort_values(by='Closing Rank')
-        
-        found = False
-        for _, row in results.iterrows():
-            cutoff = row['Closing Rank']
+    results = results.sort_values(by='Closing Rank')
+    
+    # Filter: Show colleges where cutoff is better than user's rank
+    final_list = results[results['Closing Rank'] >= effective_rank * 0.7]
+
+    if final_list.empty:
+        st.warning(f"No colleges found for Rank {int(effective_rank)} in category '{category}'.")
+    else:
+        for _, row in final_list.iterrows():
+            is_safe = effective_rank <= row['Closing Rank']
+            color = "#2ecc71" if is_safe else "#f1c40f"
+            tag = "✅ SAFE" if is_safe else "⚠️ BORDERLINE"
             
-            # Show if user rank is within reasonable distance (30% buffer)
-            if effective_rank <= cutoff * 1.3:
-                found = True
-                is_safe = effective_rank <= cutoff
-                tag = '<span class="safe-tag">✅ SAFE</span>' if is_safe else '<span class="risky-tag">⚠️ BORDERLINE</span>'
-                
-                st.markdown(f"""
-                    <div class="college-card">
-                        <div style="display: flex; justify-content: space-between;">
-                            <h4 style="margin:0;">{row['Institute']}</h4>
-                            {tag}
-                        </div>
-                        <p style="margin:5px 0; color: #bbb;">{row['Branch']}</p>
-                        <p style="margin:0; font-size: 0.85em; color: #f1c40f;">2025 Closing Rank: {int(cutoff):,}</p>
+            st.markdown(f"""
+                <div style="background:#1c212d; padding:15px; border-radius:10px; border-left:5px solid {color}; margin-bottom:10px;">
+                    <div style="display:flex; justify-content:space-between;">
+                        <h4 style="margin:0;">{row['Institute']}</h4>
+                        <span style="color:{color}; font-weight:bold;">{tag}</span>
                     </div>
-                """, unsafe_allow_html=True)
-
-        if not found:
-            st.warning("No matches found. Try a different rank or check your search terms.")
-
+                    <p style="margin:5px 0; color:#bbb;">{row['Branch']}</p>
+                    <p style="margin:0; color:#f1c40f; font-size:0.9em;">2025 Cutoff: {int(row['Closing Rank']):,}</p>
+                </div>
+            """, unsafe_allow_html=True)
 else:
-    st.error("🚨 Data Loading Failed")
-    st.write(f"Details: {error_msg}")
-    st.info("Check your 'dasa_data.csv' headers. They must be: Institute, Academic Program Name, Quota, Opening Rank, Closing Rank")
+    st.error(f"Failed to load data: {err}")
