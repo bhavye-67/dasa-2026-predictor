@@ -1,89 +1,128 @@
 import streamlit as st
+import pandas as pd
 import numpy as np
 
-# PROFESSIONAL DATABASE: Real 2024 Closing Ranks (CRL)
-COLLEGE_DATA = {
-    "Non-CIWG": [
-        {"inst": "NIT Surathkal", "branch": "Artificial Intelligence", "rank": 26688},
-        {"inst": "NIT Surathkal", "branch": "Computer Science", "rank": 40284},
-        {"inst": "NIT Calicut", "branch": "Computer Science", "rank": 112472},
-        {"inst": "MNIT Jaipur", "branch": "Computer Science", "rank": 185238},
-        {"inst": "NIT Delhi", "branch": "Computer Science", "rank": 509979},
-        {"inst": "NIT Durgapur", "branch": "Computer Science", "rank": 556130},
-        {"inst": "NIT Goa", "branch": "Computer Science", "rank": 601354},
-        {"inst": "NIT Jalandhar", "branch": "Computer Science", "rank": 790430},
-        {"inst": "MANIT Bhopal", "branch": "Computer Science", "rank": 1158145},
-    ],
-    "CIWG": [
-        {"inst": "NIT Surathkal", "branch": "Artificial Intelligence", "rank": 31557},
-        {"inst": "NIT Calicut", "branch": "Computer Science", "rank": 48693},
-        {"inst": "MNIT Jaipur", "branch": "Computer Science", "rank": 108451},
-        {"inst": "MNNIT Allahabad", "branch": "Computer Science", "rank": 174196},
-        {"inst": "NIT Delhi", "branch": "Computer Science", "rank": 186944},
-        {"inst": "NIT Jalandhar", "branch": "Computer Science", "rank": 487117},
-        {"inst": "NIT Goa", "branch": "Electrical Engineering", "rank": 1271854},
-    ]
-}
+# --- 1. PREMIUM UI SETUP ---
+st.set_page_config(page_title="DASA 2026 Master Predictor", layout="wide")
 
-# FULL SCALE MARKS VS PERCENTILE TABLE (Your provided data)
-TREND_DATA = [
-    (300, 100.0), (290, 99.999), (280, 99.995), (270, 99.985), (260, 99.98), 
-    (250, 99.97), (240, 99.95), (230, 99.93), (220, 99.9), (210, 99.85),
-    (200, 99.8), (190, 99.7), (180, 99.6), (170, 99.4), (160, 99.2),
-    (150, 99.0), (140, 98.5), (130, 97.8), (120, 97.0), (110, 96.0),
-    (100, 93.5), (90, 93.0), (80, 91.0), (70, 88.0), (60, 82.0),
-    (50, 75.0), (40, 65.0), (30, 50.0), (20, 40.0), (10, 25.0),
-    (0, 17.0), (-20, 0.0)
-]
+# Custom CSS for a clean, professional "SaaS" look
+st.markdown("""
+    <style>
+    .stApp { background-color: #0e1117; color: #e0e0e0; }
+    .main-header { color: #f1c40f; font-size: 2.5rem; font-weight: 800; margin-bottom: 20px; }
+    .card { 
+        background-color: #1c212d; 
+        padding: 20px; 
+        border-radius: 12px; 
+        border-left: 6px solid #f1c40f;
+        margin-bottom: 15px;
+        transition: transform 0.2s;
+    }
+    .card:hover { transform: scale(1.01); background-color: #252b38; }
+    .stat-box { background: #262730; padding: 15px; border-radius: 10px; border: 1px solid #3e4149; }
+    .tag-safe { color: #2ecc71; font-weight: bold; background: rgba(46, 204, 113, 0.1); padding: 4px 8px; border-radius: 5px; }
+    .tag-border { color: #f1c40f; font-weight: bold; background: rgba(241, 196, 15, 0.1); padding: 4px 8px; border-radius: 5px; }
+    </style>
+    """, unsafe_allow_html=True)
 
-def calculate_percentile(user_marks):
-    marks_list = [x[0] for x in TREND_DATA]
-    perc_list = [x[1] for x in TREND_DATA]
-    # np.interp handles the math for exact numbers in between categories
-    return np.interp(user_marks, sorted(marks_list), sorted(perc_list))
+# --- 2. DATA LOADING ---
+@st.cache_data
+def load_college_data():
+    try:
+        # This pulls from the CSV you download from the Google Sheet
+        df = pd.read_csv("dasa_data.csv")
+        # Standardizing column names in case they vary
+        df.columns = [c.strip() for c in df.columns]
+        return df
+    except Exception as e:
+        st.error(f"Error loading CSV: {e}")
+        return None
 
-def estimate_crl(percentile):
-    total_students = 1600000 # Standard 2026 expectation
-    rank = (100 - percentile) * total_students / 100
-    return int(max(1, rank))
+df = load_college_data()
 
-# WEBSITE FRONTEND
-st.set_page_config(page_title="DASA 2026 Ultimate Predictor", layout="wide")
-st.title("🎓 DASA 2026: Professional Admission Predictor")
-st.write("---")
+# --- 3. THE "BETTER" FEATURES ---
+st.markdown('<h1 class="main-header">🎓 DASA 2026 Rank Predictor</h1>', unsafe_allow_html=True)
 
-col1, col2 = st.columns([1, 1.2])
-
-with col1:
-    st.header("1. Input Score")
-    user_marks = st.number_input("Enter your Marks (-20 to 300):", -20, 300, value=150)
-    category = st.radio("DASA Category:", ["Non-CIWG", "CIWG"])
+if df is not None:
+    # SIDEBAR CONTROLS
+    st.sidebar.header("🎯 Target & Filters")
+    user_rank = st.sidebar.number_input("Enter Your JEE CRL Rank", value=50000, step=1000)
+    category = st.sidebar.selectbox("DASA Category", ["Non-CIWG", "CIWG"])
     
-    # Run Predictions
-    predicted_perc = calculate_percentile(user_marks)
-    predicted_rank = estimate_crl(predicted_perc)
-
-    st.success(f"**Predicted Percentile:** {predicted_perc:.4f}%")
-    st.info(f"**Estimated JEE CRL Rank:** {predicted_rank:,}")
-
-with col2:
-    st.header("2. College Matches")
-    st.write(f"Showing results for **{category}** based on 2024 Final Round data:")
+    # Feature 1: Safety Buffer (Predicting 2026 hardness)
+    buffer = st.sidebar.slider("Volatility Buffer (%)", 0, 20, 5)
+    effective_rank = user_rank * (1 + buffer/100)
     
-    eligible = []
-    for college in COLLEGE_DATA[category]:
-        if predicted_rank <= college["rank"]:
-            eligible.append((college, "✅ High Chance"))
-        elif predicted_rank <= college["rank"] * 1.2:
-            eligible.append((college, "⚠️ Borderline / Moderate"))
+    st.sidebar.divider()
+    institute_type = st.sidebar.multiselect("Institute Type", options=df['Type'].unique() if 'Type' in df.columns else ["NIT", "IIIT", "CF TI", "Other"])
+    
+    # MAIN LAYOUT
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.markdown("### 📊 Analysis")
+        st.markdown(f"""
+        <div class="stat-box">
+            <small>ADJUSTED RANK FOR 2026</small><br>
+            <strong style="font-size: 24px; color: #f1c40f;">{int(effective_rank):,}</strong><br>
+            <p style="font-size: 0.8em; color: #888; margin-top:10px;">
+            We added a {buffer}% buffer to account for 2026 competition increases.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.info("💡 **Pro Tip:** Ranks in DASA can jump significantly. Always look for colleges where your rank is at least 10% better than last year's closing.")
+
+    with col2:
+        st.markdown(f"### 🏛️ College Matches for {category}")
+        
+        # Filter Logic
+        # Note: Ensure these column names match your CSV exactly (e.g., 'Category', 'Closing Rank')
+        mask = (df['Category'] == category)
+        filtered = df[mask].copy()
+        
+        # Search functionality
+        search_query = st.text_input("🔍 Search by College or City", "")
+        if search_query:
+            filtered = filtered[filtered['Institute'].str.contains(search_query, case=False) | 
+                                filtered['Branch'].str.contains(search_query, case=False)]
+
+        # Sorting: Show closest matches first
+        filtered = filtered.sort_values(by='Closing Rank')
+
+        # Display Loop
+        match_count = 0
+        for _, row in filtered.iterrows():
+            cutoff = row['Closing Rank']
             
-    if eligible:
-        for c, status in eligible:
-            with st.expander(f"{status}: {c['inst']} - {c['branch']}"):
-                st.write(f"**Last Year Closing Rank:** {c['rank']:,}")
-                st.write(f"**Your Predicted Rank:** {predicted_rank:,}")
-    else:
-        st.warning("No matches found in top NITs. Consider newer IIITs or non-CSE branches.")
+            # Logic for color coding
+            if user_rank <= cutoff:
+                status_html = '<span class="tag-safe">HIGH PROBABILITY</span>'
+                card_border = "#2ecc71"
+            elif user_rank <= cutoff * 1.2:
+                status_html = '<span class="tag-border">MODERATE / RISKY</span>'
+                card_border = "#f1c40f"
+            else:
+                continue # Hide colleges that are way out of reach
 
-st.write("---")
-st.caption("Note: This tool uses 2022-2024 trends to forecast 2026 possibilities. Actual cutoffs vary year-on-year.")
+            st.markdown(f"""
+            <div class="card" style="border-left-color: {card_border};">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <h4 style="margin:0;">{row['Institute']}</h4>
+                        <p style="margin:0; color: #bbb; font-size: 0.9em;">{row['Branch']}</p>
+                    </div>
+                    <div style="text-align: right;">
+                        {status_html}<br>
+                        <small style="color: #888;">'25 Cutoff: {int(cutoff):,}</small>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            match_count += 1
+
+        if match_count == 0:
+            st.warning("No matches found for this rank. Try adjusting your filters or buffer.")
+
+else:
+    st.error("Please ensure 'dasa_data.csv' is uploaded to the repository.")
