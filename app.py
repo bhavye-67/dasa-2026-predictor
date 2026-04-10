@@ -1,102 +1,109 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="DASA 2026 - Data Verified", layout="wide")
+# --- APPLE DARK THEME UI ---
+st.set_page_config(page_title="DASA 2026", layout="wide")
 
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+        background-color: #000000;
+        color: #FFFFFF;
+    }
+    
+    .stApp { background-color: #000000; }
+
+    /* Modern Apple-like Cards */
+    .college-card {
+        background: rgba(28, 28, 30, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 16px;
+        backdrop-filter: blur(10px);
+        transition: transform 0.2s ease;
+    }
+    
+    .college-card:hover {
+        transform: translateY(-2px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .inst-name { color: #FFFFFF; font-weight: 600; font-size: 1.1rem; margin-bottom: 4px; }
+    .prog-name { color: #8E8E93; font-size: 0.9rem; margin-bottom: 12px; }
+    .rank-tag { 
+        display: inline-block;
+        background: rgba(255, 255, 255, 0.1); 
+        padding: 4px 10px; 
+        border-radius: 8px; 
+        font-size: 0.85rem; 
+        color: #0A84FF;
+        font-weight: 600;
+    }
+
+    /* Input Styling */
+    .stNumberInput, .stSelectbox { border-radius: 12px; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- DATA ENGINE ---
 @st.cache_data
-def load_strict_data():
+def get_data():
     try:
-        # 1. Load your specific file
         df = pd.read_csv("dasa_data.csv")
         df.columns = df.columns.str.strip()
-        
-        # 2. Map your exact column names
-        # Institute, Academic Program Name, Quota, Opening Rank, Closing Rank
-        rename_map = {
-            'Institute': 'Inst',
-            'Academic Program Name': 'Program',
-            'Quota': 'Quota',
-            'Closing Rank': 'Cutoff'
-        }
-        
-        # Verify columns exist
-        for col in rename_map.keys():
-            if col not in df.columns:
-                st.error(f"⚠️ Column '{col}' is missing from your CSV!")
-                st.stop()
-                
-        df = df.rename(columns=rename_map)
-        
-        # 3. Clean the Ranks (Remove commas/strings)
-        df['Cutoff'] = pd.to_numeric(df['Cutoff'].astype(str).str.replace(',', ''), errors='coerce')
-        return df.dropna(subset=['Cutoff'])
+        # Cleaning Rank data (removing commas/converting to numbers)
+        df['Closing Rank'] = pd.to_numeric(df['Closing Rank'].astype(str).str.replace(',', ''), errors='coerce')
+        return df.dropna(subset=['Closing Rank'])
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error loading dasa_data.csv: {e}")
         return None
 
-df = load_strict_data()
+df = get_data()
 
-# --- THE UI ---
-st.title("🎯 Verified DASA 2026 Predictor")
-st.write("---")
+# --- APP LAYOUT ---
+st.title("🏛️ Predictor")
+st.write("Using 2025 official data from your GitHub repository.")
 
 if df is not None:
-    # Sidebar Filters
-    st.sidebar.header("User Input")
-    my_rank = st.sidebar.number_input("Your JEE CRL Rank", value=50000)
-    
-    # Dynamically pull Quotas from YOUR data (CIWG/Non-CIWG)
-    available_quotas = df['Quota'].unique().tolist()
-    my_quota = st.sidebar.selectbox("Select Quota", available_quotas)
-    
-    # Search Filter
-    search_query = st.sidebar.text_input("Search (e.g., 'Trichy' or 'CSE')")
+    # Top Section: Inputs
+    c1, c2 = st.columns(2)
+    with c1:
+        user_rank = st.number_input("Enter your JEE CRL Rank", min_value=1, value=50000, step=1000)
+    with c2:
+        # Pulls Quotas directly from your file (e.g., CIWG, Non-CIWG)
+        q_options = df['Quota'].unique().tolist()
+        user_quota = st.selectbox("Select your Quota", q_options)
 
-    # --- FILTERING LOGIC ---
-    # We only look at your selected Quota
-    filtered = df[df['Quota'] == my_quota].copy()
-    
-    if search_query:
-        filtered = filtered[
-            filtered['Inst'].str.contains(search_query, case=False) | 
-            filtered['Program'].str.contains(search_query, case=False)
-        ]
+    st.write("---")
 
-    # --- DISPLAY ---
-    st.subheader(f"Results for {my_quota} (Total: {len(filtered)} branches found)")
+    # Filtering Logic
+    results = df[df['Quota'] == user_quota].copy()
     
-    # Logic: Show colleges where the cutoff is "close" to the user rank
-    # We show anything where the user's rank is better than or near the cutoff
-    matches = filtered[filtered['Cutoff'] >= my_rank * 0.7].sort_values('Cutoff')
+    # Cross-check: We show colleges where your rank is better than (or very close to) the cutoff
+    # Sort by rank to show best institutes first
+    results = results.sort_values(by='Closing Rank')
+
+    # Filtering for display: only show stuff the user could actually get (with a 20% buffer)
+    matches = results[results['Closing Rank'] >= user_rank * 0.8]
 
     if matches.empty:
-        st.warning("No matches found in your data for this rank.")
+        st.warning("No institutes found in the data matching this rank.")
     else:
+        # Grid layout for results
         for _, row in matches.iterrows():
-            is_safe = my_rank <= row['Cutoff']
-            status = "✅ SAFE" if is_safe else "⚠️ BORDERLINE"
-            card_color = "#2ecc71" if is_safe else "#f1c40f"
-            
             st.markdown(f"""
-                <div style="background:#1c212d; padding:15px; border-radius:10px; border-left:6px solid {card_color}; margin-bottom:10px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <h4 style="margin:0; color:white;">{row['Inst']}</h4>
-                        <span style="color:{card_color}; font-weight:bold;">{status}</span>
-                    </div>
-                    <p style="margin:5px 0; color:#aaa; font-size:0.9em;">{row['Program']}</p>
-                    <p style="margin:0; color:#f1c40f; font-weight:bold;">2025 Closing: {int(row['Cutoff']):,}</p>
+                <div class="college-card">
+                    <div class="inst-name">{row['Institute']}</div>
+                    <div class="prog-name">{row['Academic Program Name']}</div>
+                    <div class="rank-tag">2025 Rank: {int(row['Closing Rank']):,}</div>
                 </div>
             """, unsafe_allow_html=True)
 
-# --- DEBUG TOOLS ---
-with st.expander("🔍 Inspect Data (Check if NIT Meghalaya is really here)"):
-    if df is not None:
-        st.write("First 10 rows of your file:")
-        st.dataframe(df.head(10))
-        if st.button("Check for NIT Meghalaya"):
-            check = df[df['Inst'].str.contains("Meghalaya", case=False)]
-            if check.empty:
-                st.write("❌ NIT Meghalaya is NOT in your CSV.")
-            else:
-                st.write("✅ NIT Meghalaya FOUND in your CSV:")
-                st.write(check)
+else:
+    st.info("Please ensure 'dasa_data.csv' is in your GitHub repo with headers: Institute, Academic Program Name, Quota, Closing Rank.")
+
+st.caption("Admin Mode: Dynamic CSV integration active.")
