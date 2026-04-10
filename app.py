@@ -1,85 +1,102 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 
-st.set_page_config(page_title="DASA 2026 Master Predictor", layout="wide")
+st.set_page_config(page_title="DASA 2026 - Data Verified", layout="wide")
 
 @st.cache_data
-def load_college_data():
+def load_strict_data():
     try:
+        # 1. Load your specific file
         df = pd.read_csv("dasa_data.csv")
-        df.columns = df.columns.str.strip() 
+        df.columns = df.columns.str.strip()
         
-        # Exact matching for your headers
-        rename_dict = {
-            'Institute': 'Institute',
-            'Academic Program Name': 'Branch',
-            'Quota': 'Category',
-            'Closing Rank': 'Closing Rank'
+        # 2. Map your exact column names
+        # Institute, Academic Program Name, Quota, Opening Rank, Closing Rank
+        rename_map = {
+            'Institute': 'Inst',
+            'Academic Program Name': 'Program',
+            'Quota': 'Quota',
+            'Closing Rank': 'Cutoff'
         }
         
-        # Check if they exist
-        for old, new in rename_dict.items():
-            if old not in df.columns:
-                return None, f"Missing column: {old}"
+        # Verify columns exist
+        for col in rename_map.keys():
+            if col not in df.columns:
+                st.error(f"⚠️ Column '{col}' is missing from your CSV!")
+                st.stop()
+                
+        df = df.rename(columns=rename_map)
         
-        df = df.rename(columns=rename_dict)
-        # Fix Rank format (remove commas and convert to number)
-        df['Closing Rank'] = pd.to_numeric(df['Closing Rank'].astype(str).str.replace(',', ''), errors='coerce')
-        return df.dropna(subset=['Closing Rank']), None
+        # 3. Clean the Ranks (Remove commas/strings)
+        df['Cutoff'] = pd.to_numeric(df['Cutoff'].astype(str).str.replace(',', ''), errors='coerce')
+        return df.dropna(subset=['Cutoff'])
     except Exception as e:
-        return None, str(e)
+        st.error(f"Error: {e}")
+        return None
 
-df, err = load_college_data()
+df = load_strict_data()
 
-st.title("🏛️ DASA 2026 Master Predictor")
+# --- THE UI ---
+st.title("🎯 Verified DASA 2026 Predictor")
+st.write("---")
 
 if df is not None:
-    # --- DEBUG SECTION (You can delete this after it works) ---
-    with st.expander("🛠️ Debug: See your file data"):
-        st.write("Unique Categories in your file:", df['Category'].unique().tolist())
-        st.write("First 5 rows of data:", df.head())
-    # ---------------------------------------------------------
-
-    st.sidebar.header("🎯 Target Rank")
-    user_rank = st.sidebar.number_input("JEE Main CRL Rank", value=50000)
+    # Sidebar Filters
+    st.sidebar.header("User Input")
+    my_rank = st.sidebar.number_input("Your JEE CRL Rank", value=50000)
     
-    # Check if we should use CIWG or something else
-    available_cats = df['Category'].unique().tolist()
-    category = st.sidebar.selectbox("Category", available_cats)
+    # Dynamically pull Quotas from YOUR data (CIWG/Non-CIWG)
+    available_quotas = df['Quota'].unique().tolist()
+    my_quota = st.sidebar.selectbox("Select Quota", available_quotas)
     
-    search = st.sidebar.text_input("🔍 Search College")
-    buffer = st.sidebar.slider("2026 Buffer (%)", 0, 20, 5)
-    effective_rank = user_rank * (1 + buffer/100)
+    # Search Filter
+    search_query = st.sidebar.text_input("Search (e.g., 'Trichy' or 'CSE')")
 
-    results = df[df['Category'] == category].copy()
+    # --- FILTERING LOGIC ---
+    # We only look at your selected Quota
+    filtered = df[df['Quota'] == my_quota].copy()
     
-    if search:
-        results = results[results['Institute'].str.contains(search, case=False) | 
-                         results['Branch'].str.contains(search, case=False)]
+    if search_query:
+        filtered = filtered[
+            filtered['Inst'].str.contains(search_query, case=False) | 
+            filtered['Program'].str.contains(search_query, case=False)
+        ]
 
-    results = results.sort_values(by='Closing Rank')
+    # --- DISPLAY ---
+    st.subheader(f"Results for {my_quota} (Total: {len(filtered)} branches found)")
     
-    # Filter: Show colleges where cutoff is better than user's rank
-    final_list = results[results['Closing Rank'] >= effective_rank * 0.7]
+    # Logic: Show colleges where the cutoff is "close" to the user rank
+    # We show anything where the user's rank is better than or near the cutoff
+    matches = filtered[filtered['Cutoff'] >= my_rank * 0.7].sort_values('Cutoff')
 
-    if final_list.empty:
-        st.warning(f"No colleges found for Rank {int(effective_rank)} in category '{category}'.")
+    if matches.empty:
+        st.warning("No matches found in your data for this rank.")
     else:
-        for _, row in final_list.iterrows():
-            is_safe = effective_rank <= row['Closing Rank']
-            color = "#2ecc71" if is_safe else "#f1c40f"
-            tag = "✅ SAFE" if is_safe else "⚠️ BORDERLINE"
+        for _, row in matches.iterrows():
+            is_safe = my_rank <= row['Cutoff']
+            status = "✅ SAFE" if is_safe else "⚠️ BORDERLINE"
+            card_color = "#2ecc71" if is_safe else "#f1c40f"
             
             st.markdown(f"""
-                <div style="background:#1c212d; padding:15px; border-radius:10px; border-left:5px solid {color}; margin-bottom:10px;">
-                    <div style="display:flex; justify-content:space-between;">
-                        <h4 style="margin:0;">{row['Institute']}</h4>
-                        <span style="color:{color}; font-weight:bold;">{tag}</span>
+                <div style="background:#1c212d; padding:15px; border-radius:10px; border-left:6px solid {card_color}; margin-bottom:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h4 style="margin:0; color:white;">{row['Inst']}</h4>
+                        <span style="color:{card_color}; font-weight:bold;">{status}</span>
                     </div>
-                    <p style="margin:5px 0; color:#bbb;">{row['Branch']}</p>
-                    <p style="margin:0; color:#f1c40f; font-size:0.9em;">2025 Cutoff: {int(row['Closing Rank']):,}</p>
+                    <p style="margin:5px 0; color:#aaa; font-size:0.9em;">{row['Program']}</p>
+                    <p style="margin:0; color:#f1c40f; font-weight:bold;">2025 Closing: {int(row['Cutoff']):,}</p>
                 </div>
             """, unsafe_allow_html=True)
-else:
-    st.error(f"Failed to load data: {err}")
+
+# --- DEBUG TOOLS ---
+with st.expander("🔍 Inspect Data (Check if NIT Meghalaya is really here)"):
+    if df is not None:
+        st.write("First 10 rows of your file:")
+        st.dataframe(df.head(10))
+        if st.button("Check for NIT Meghalaya"):
+            check = df[df['Inst'].str.contains("Meghalaya", case=False)]
+            if check.empty:
+                st.write("❌ NIT Meghalaya is NOT in your CSV.")
+            else:
+                st.write("✅ NIT Meghalaya FOUND in your CSV:")
+                st.write(check)
