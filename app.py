@@ -29,16 +29,20 @@ st.markdown("""
 @st.cache_data
 def load_college_data():
     try:
-        # This pulls from the CSV you download from the Google Sheet
         df = pd.read_csv("dasa_data.csv")
-        # Standardizing column names in case they vary
-        df.columns = [c.strip() for c in df.columns]
+        # CLEANUP: Remove hidden spaces from column names
+        df.columns = df.columns.str.strip() 
+        
+        # DEBUG: If the app fails, this will show you the real column names
+        expected = ['Category', 'Institute', 'Branch', 'Closing Rank']
+        for col in expected:
+            if col not in df.columns:
+                st.error(f"❌ Column '{col}' not found! Your CSV has: {list(df.columns)}")
+                st.stop()
         return df
     except Exception as e:
-        st.error(f"Error loading CSV: {e}")
+        st.error(f"Could not read CSV file: {e}")
         return None
-
-df = load_college_data()
 
 # --- 3. THE "BETTER" FEATURES ---
 st.markdown('<h1 class="main-header">🎓 DASA 2026 Rank Predictor</h1>', unsafe_allow_html=True)
