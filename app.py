@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
 
-# --- APPLE DARK UI SETUP ---
-st.set_page_config(page_title="DASA Predictor", layout="centered")
+# --- APPLE DARK UI CONFIGURATION ---
+st.set_page_config(page_title="DASA 2026 Predictor", layout="centered")
 
 st.markdown("""
     <style>
-    /* Apple-like typography and dark mode colors */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
     
     html, body, [class*="css"] {
@@ -17,24 +16,115 @@ st.markdown("""
     
     .stApp { background-color: #000000; }
     
-    /* Clean, translucent card style */
+    /* Sleek Card Design */
     .apple-card {
         background-color: #1C1C1E;
         border-radius: 14px;
-        padding: 20px;
+        padding: 24px;
         margin-bottom: 16px;
         border: 1px solid #38383A;
+        transition: border 0.3s ease;
     }
     
-    .apple-title { 
-        font-size: 1.15rem; 
+    .apple-card:hover {
+        border: 1px solid #0A84FF;
+    }
+    
+    .inst-title { 
+        font-size: 1.1rem; 
         font-weight: 600; 
         color: #FFFFFF; 
-        margin-bottom: 4px; 
+        margin-bottom: 6px; 
     }
     
-    .apple-subtitle { 
-        font-size: 0.95rem; 
+    .prog-subtitle { 
+        font-size: 0.9rem; 
+        color: #8E8E93; 
+        margin-bottom: 14px; 
+        line-height: 1.4;
+    }
+    
+    .rank-badge { 
+        display: inline-block;
+        background-color: #2C2C2E;
+        color: #0A84FF;
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+
+    /* Input Styling */
+    .stNumberInput input {
+        background-color: #1C1C1E !important;
+        color: white !important;
+        border: 1px solid #38383A !important;
+        border-radius: 10px !important;
+    }
+    
+    .stSelectbox div[data-baseweb="select"] {
+        background-color: #1C1C1E !important;
+        border-radius: 10px !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("DASA Predictor")
+
+# --- DATA LOADING ---
+@st.cache_data
+def load_data():
+    try:
+        # Load your specific file
+        df = pd.read_csv("dasa_data.csv")
+        # Ensure ranks are integers
+        df['Closing Rank'] = pd.to_numeric(df['Closing Rank'], errors='coerce')
+        return df.dropna(subset=['Closing Rank'])
+    except Exception as e:
+        st.error(f"Error loading dasa_data.csv: {e}")
+        return None
+
+df = load_data()
+
+if df is not None:
+    # --- INPUT SECTION ---
+    col1, col2 = st.columns(2)
+    with col1:
+        user_rank = st.number_input("Enter Your Rank", min_value=1, value=50000)
+    with col2:
+        # Fixed selection as requested
+        user_quota = st.selectbox("Select Quota", ["DASA-CIWG", "DASA-Non CIWG"])
+
+    st.write("---")
+
+    # --- CROSSCHECK LOGIC ---
+    # 1. Filter by Quota
+    # 2. Filter by Rank: You are eligible if your rank <= last year's Closing Rank
+    matches = df[
+        (df['Quota'] == user_quota) & 
+        (user_rank <= df['Closing Rank'])
+    ]
+    
+    # Sort by Closing Rank (most competitive first)
+    matches = matches.sort_values(by='Closing Rank')
+
+    # --- DISPLAY MATCHES ---
+    if matches.empty:
+        st.warning("No institutes matched your rank in this category.")
+    else:
+        st.subheader(f"Matching Results ({len(matches)})")
+        for _, row in matches.iterrows():
+            st.markdown(f"""
+            <div class="apple-card">
+                <div class="inst-title">{row['Institute']}</div>
+                <div class="prog-subtitle">{row['Academic Program Name']}</div>
+                <div class="rank-badge">LAST YEAR'S RANK: {int(row['Closing Rank']):,}</div>
+            </div>
+            """, unsafe_allow_html=True)
+else:
+    st.info("Upload 'dasa_data.csv' to your repository to begin.")
+    font-size: 0.95rem; 
         color: #86868B; 
         margin-bottom: 12px; 
     }
