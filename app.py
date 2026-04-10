@@ -63,11 +63,10 @@ st.title("DASA Predictor")
 # --- DATA LOADER ---
 @st.cache_data
 def load_data():
-    # Reads strictly from your GitHub file
+    # Reads strictly from your dasa_data.csv file
     df = pd.read_csv("dasa_data.csv")
-    df.columns = df.columns.str.strip()
     
-    # Ensures 'Closing Rank' is read as a clean number
+    # Ensures 'Closing Rank' is read as a clean number to prevent crashes
     if 'Closing Rank' in df.columns:
         df['Closing Rank'] = pd.to_numeric(df['Closing Rank'].astype(str).str.replace(',', ''), errors='coerce')
     
@@ -81,8 +80,8 @@ try:
     with col1:
         user_rank = st.number_input("Enter Your Rank", min_value=1, value=50000, step=1000)
     with col2:
-        # Dynamically pulls Quotas (CIWG, Non-CIWG, etc.) from your file
-        available_quotas = df['Quota'].unique()
+        # Dynamically pulls Quotas directly from your file
+        available_quotas = df['Quota'].dropna().unique()
         user_quota = st.selectbox("Select Quota", available_quotas)
         
     st.divider()
@@ -110,4 +109,4 @@ try:
 except FileNotFoundError:
     st.error("⚠️ 'dasa_data.csv' not found. Please make sure the file is uploaded to your GitHub repo exactly with this name.")
 except Exception as e:
-    st.error(f"⚠️ Error: Make sure your file has the exact headers: Institute, Academic Program Name, Quota, Closing Rank. Detailed error: {e}")
+    st.error(f"⚠️ Error: {e}")
