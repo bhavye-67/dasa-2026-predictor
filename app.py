@@ -27,21 +27,35 @@ st.markdown("""
 
 # --- 2. DATA LOADING ---
 @st.cache_data
+@st.cache_data
 def load_college_data():
     try:
         df = pd.read_csv("dasa_data.csv")
-        # CLEANUP: Remove hidden spaces from column names
-        df.columns = df.columns.str.strip() 
+        df.columns = df.columns.str.strip() # Remove hidden spaces
         
-        # DEBUG: If the app fails, this will show you the real column names
-        expected = ['Category', 'Institute', 'Branch', 'Closing Rank']
-        for col in expected:
-            if col not in df.columns:
-                st.error(f"❌ Column '{col}' not found! Your CSV has: {list(df.columns)}")
-                st.stop()
-        return df
+        # KEYWORD MAPPING: This finds the right column even if the name varies
+        col_map = {}
+        for col in df.columns:
+            c_low = col.lower()
+            if 'inst' in c_low: col_map['Institute'] = col
+            elif 'branch' in c_low or 'program' in c_low: col_map['Branch'] = col
+            elif 'close' in c_low or 'cutoff' in c_low or 'rank' in c_low: col_map['Closing Rank'] = col
+            elif 'cat' in c_low or 'quota' in c_low: col_map['Category'] = col
+            elif 'type' in c_low: col_map['Type'] = col
+
+        # Check if we found the essentials
+        required = ['Institute', 'Academic Program Name', 'Closing Rank', 'Quota']
+        missing = [r for r in required if r not in col_map]
+        
+        if missing:
+            st.error(f"❌ Missing columns: {missing}. Your CSV has: {list(df.columns)}")
+            st.stop()
+            
+        # Rename the columns to our standard names for the rest of the code
+        return df.rename(columns={v: k for k, v in col_map.items()})
+        
     except Exception as e:
-        st.error(f"Could not read CSV file: {e}")
+        st.error(f"File Error: {e}")
         return None
 
 # --- 3. THE "BETTER" FEATURES ---
