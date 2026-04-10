@@ -2,145 +2,117 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# --- 1. PREMIUM UI SETUP ---
-st.set_page_config(page_title="DASA 2026 Master Predictor", layout="wide")
+# 1. PAGE SETUP
+st.set_page_config(page_title="DASA 2026 Rank Predictor", layout="wide")
 
-# Custom CSS for a clean, professional "SaaS" look
-st.markdown("""
-    <style>
-    .stApp { background-color: #0e1117; color: #e0e0e0; }
-    .main-header { color: #f1c40f; font-size: 2.5rem; font-weight: 800; margin-bottom: 20px; }
-    .card { 
-        background-color: #1c212d; 
-        padding: 20px; 
-        border-radius: 12px; 
-        border-left: 6px solid #f1c40f;
-        margin-bottom: 15px;
-        transition: transform 0.2s;
-    }
-    .card:hover { transform: scale(1.01); background-color: #252b38; }
-    .stat-box { background: #262730; padding: 15px; border-radius: 10px; border: 1px solid #3e4149; }
-    .tag-safe { color: #2ecc71; font-weight: bold; background: rgba(46, 204, 113, 0.1); padding: 4px 8px; border-radius: 5px; }
-    .tag-border { color: #f1c40f; font-weight: bold; background: rgba(241, 196, 15, 0.1); padding: 4px 8px; border-radius: 5px; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- 2. DATA LOADING ---
-@st.cache_data
+# 2. SMART DATA LOADER
 @st.cache_data
 def load_college_data():
     try:
+        # Load the CSV
         df = pd.read_csv("dasa_data.csv")
-        df.columns = df.columns.str.strip() # Remove hidden spaces
+        df.columns = df.columns.str.strip() # Remove spaces from headers
         
-        # KEYWORD MAPPING: This finds the right column even if the name varies
+        # This mapping makes the app work even if your CSV column names change slightly
         col_map = {}
         for col in df.columns:
             c_low = col.lower()
-            if 'inst' in c_low: col_map['Institute'] = col
-            elif 'branch' in c_low or 'program' in c_low: col_map['Branch'] = col
-            elif 'close' in c_low or 'cutoff' in c_low or 'rank' in c_low: col_map['Closing Rank'] = col
-            elif 'cat' in c_low or 'quota' in c_low: col_map['Category'] = col
-            elif 'type' in c_low: col_map['Type'] = col
-
-        # Check if we found the essentials
-        required = ['Institute', 'Academic Program Name', 'Closing Rank', 'Quota']
-        missing = [r for r in required if r not in col_map]
+            if 'inst' in c_low: col_map[col] = 'Institute'
+            elif 'Academic Program Name' in c_low or 'prog' in c_low: col_map[col] = 'Academic Program Name'
+            elif 'rank' in c_low or 'close' in c_low: col_map[col] = 'Closing Rank'
+            elif 'cat' in c_low or 'quota' in c_low: col_map[col] = 'Category'
         
-        if missing:
-            st.error(f"❌ Missing columns: {missing}. Your CSV has: {list(df.columns)}")
-            st.stop()
-            
-        # Rename the columns to our standard names for the rest of the code
-        return df.rename(columns={v: k for k, v in col_map.items()})
+        df = df.rename(columns=col_map)
         
+        # Final check for essential columns
+        required = ['Institute', 'Academic Program Name', 'Closing Rank', 'Category']
+        for req in required:
+            if req not in df.columns:
+                return None, f"Missing column: {req}. Found: {list(df.columns)}"
+        
+        # Ensure ranks are numbers
+        df['Closing Rank'] = pd.to_numeric(df['Closing Rank'], errors='coerce')
+        return df, None
     except Exception as e:
-        st.error(f"File Error: {e}")
-        return None
+        return None, str(e)
 
-# --- 3. THE "BETTER" FEATURES ---
-st.markdown('<h1 class="main-header">🎓 DASA 2026 Rank Predictor</h1>', unsafe_allow_html=True)
+# Initialize data
+df, error_msg = load_college_data()
+
+# 3. UI STYLE
+st.markdown("""
+    <style>
+    .stApp { background-color: #0e1117; color: white; }
+    .college-card { 
+        background-color: #1c212d; padding: 20px; border-radius: 12px; 
+        border-left: 6px solid #f1c40f; margin-bottom: 15px;
+    }
+    .safe-tag { color: #2ecc71; font-weight: bold; font-size: 0.8em; border: 1px solid #2ecc71; padding: 2px 8px; border-radius: 5px; }
+    .risky-tag { color: #f1c40f; font-weight: bold; font-size: 0.8em; border: 1px solid #f1c40f; padding: 2px 8px; border-radius: 5px; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# 4. MAIN APP LOGIC
+st.title("🏛️ DASA 2026 Master Predictor")
 
 if df is not None:
-    # SIDEBAR CONTROLS
-    st.sidebar.header("🎯 Target & Filters")
-    user_rank = st.sidebar.number_input("Enter Your JEE CRL Rank", value=50000, step=1000)
-    category = st.sidebar.selectbox("DASA Category", ["Non-CIWG", "CIWG"])
+    # Sidebar for Inputs
+    st.sidebar.header("🎯 Input Your Stats")
+    user_rank = st.sidebar.number_input("JEE Main CRL Rank", min_value=1, value=50000, step=1000)
+    category = st.sidebar.selectbox("Category", ["Non-CIWG", "CIWG"])
     
-    # Feature 1: Safety Buffer (Predicting 2026 hardness)
+    # "Better" Feature: Safety Buffer
+    # This accounts for the 2026 competition increase
+    st.sidebar.divider()
     buffer = st.sidebar.slider("Volatility Buffer (%)", 0, 20, 5)
     effective_rank = user_rank * (1 + buffer/100)
     
-    st.sidebar.divider()
-    institute_type = st.sidebar.multiselect("Institute Type", options=df['Type'].unique() if 'Type' in df.columns else ["NIT", "IIIT", "CF TI", "Other"])
-    
-    # MAIN LAYOUT
-    col1, col2 = st.columns([1, 2])
+    # Layout
+    col1, col2 = st.columns([1, 2.5])
     
     with col1:
-        st.markdown("### 📊 Analysis")
-        st.markdown(f"""
-        <div class="stat-box">
-            <small>ADJUSTED RANK FOR 2026</small><br>
-            <strong style="font-size: 24px; color: #f1c40f;">{int(effective_rank):,}</strong><br>
-            <p style="font-size: 0.8em; color: #888; margin-top:10px;">
-            We added a {buffer}% buffer to account for 2026 competition increases.
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.info("💡 **Pro Tip:** Ranks in DASA can jump significantly. Always look for colleges where your rank is at least 10% better than last year's closing.")
+        st.subheader("Your Profile")
+        st.metric("Effective Rank", f"{int(effective_rank):,}", delta=f"+{buffer}% Buffer", delta_color="inverse")
+        st.write(f"Category: **{category}**")
+        st.info("The Safety Buffer treats your rank as 'lower' to protect you against 2026 competition spikes.")
 
     with col2:
-        st.markdown(f"### 🏛️ College Matches for {category}")
+        st.subheader("Predicted College Matches")
         
-        # Filter Logic
-        # Note: Ensure these column names match your CSV exactly (e.g., 'Category', 'Closing Rank')
-        mask = (df['Category'] == category)
-        filtered = df[mask].copy()
+        # Filtering
+        results = df[df['Category'] == category].copy()
         
-        # Search functionality
-        search_query = st.text_input("🔍 Search by College or City", "")
-        if search_query:
-            filtered = filtered[filtered['Institute'].str.contains(search_query, case=False) | 
-                                filtered['Branch'].str.contains(search_query, case=False)]
-
-        # Sorting: Show closest matches first
-        filtered = filtered.sort_values(by='Closing Rank')
-
-        # Display Loop
-        match_count = 0
-        for _, row in filtered.iterrows():
+        # Sort by Closing Rank (most prestigious first)
+        results = results.sort_values(by='Closing Rank')
+        
+        found = False
+        for _, row in results.iterrows():
             cutoff = row['Closing Rank']
             
-            # Logic for color coding
-            if user_rank <= cutoff:
-                status_html = '<span class="tag-safe">HIGH PROBABILITY</span>'
-                card_border = "#2ecc71"
-            elif user_rank <= cutoff * 1.2:
-                status_html = '<span class="tag-border">MODERATE / RISKY</span>'
-                card_border = "#f1c40f"
-            else:
-                continue # Hide colleges that are way out of reach
-
+            # Skip if way out of range (user rank > 1.3x the cutoff)
+            if effective_rank > cutoff * 1.3:
+                continue
+            
+            found = True
+            is_safe = effective_rank <= cutoff
+            status_tag = '<span class="safe-tag">✅ SAFE</span>' if is_safe else '<span class="risky-tag">⚠️ BORDERLINE</span>'
+            
             st.markdown(f"""
-            <div class="card" style="border-left-color: {card_border};">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                    <div>
+                <div class="college-card">
+                    <div style="display: flex; justify-content: space-between;">
                         <h4 style="margin:0;">{row['Institute']}</h4>
-                        <p style="margin:0; color: #bbb; font-size: 0.9em;">{row['Branch']}</p>
+                        {status_tag}
                     </div>
-                    <div style="text-align: right;">
-                        {status_html}<br>
-                        <small style="color: #888;">'25 Cutoff: {int(cutoff):,}</small>
-                    </div>
+                    <p style="margin:5px 0; color: #bbb;">{row['Academic Program Name']}</p>
+                    <p style="margin:0; font-size: 0.85em; color: #f1c40f;">2025 Closing Rank: {int(cutoff):,}</p>
                 </div>
-            </div>
             """, unsafe_allow_html=True)
-            match_count += 1
-
-        if match_count == 0:
-            st.warning("No matches found for this rank. Try adjusting your filters or buffer.")
+            
+        if not found:
+            st.warning("No matches found for this rank. Try lowering the buffer or checking different categories.")
 
 else:
-    st.error("Please ensure 'dasa_data.csv' is uploaded to the repository.")
+    # This handles the case where the file is missing or formatted wrong
+    st.error("🚨 Data Loading Failed")
+    st.write(f"Details: {error_msg}")
+    st.info("Check your 'dasa_data.csv' file and make sure the columns are named correctly.")
